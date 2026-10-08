@@ -1,0 +1,747 @@
+// ============================================================================
+// Complete Prisma Schema for Krishi Market
+// Configured for PostgreSQL (Supabase) + Next.js App Router
+// ============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ============================================================================
+// ENUMS
+// ============================================================================
+
+enum UserRole {
+  ADMIN
+  FARMER
+  CONSUMER
+}
+
+enum VerificationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum FarmingMethod {
+  ORGANIC
+  NATURAL_ZBNF
+  HYDROPONIC
+  REGENERATIVE
+  PESTICIDE_FREE
+  TRADITIONAL
+  CONVENTIONAL
+  MIXED
+}
+
+enum ProductStatus {
+  ACTIVE
+  DRAFT
+  OUT_OF_STOCK
+  EXPIRED
+}
+
+enum ProductCategory {
+  VEGETABLES
+  FRUITS
+  DAIRY
+  GRAINS
+  PULSES
+  EGGS
+  HERBS
+  SPICES
+  ORGANIC_SPECIALTY
+  OTHER
+}
+
+enum HarvestStatus {
+  AVAILABLE
+  LOW_STOCK
+  SOLD_OUT
+  SURPLUS
+  EXPIRED
+  DEPLETED
+}
+
+enum TraceabilityStep {
+  FARM_ORIGIN
+  HARVEST
+  PACK
+  DISPATCH
+  DELIVERY
+}
+
+enum SurplusOfferStatus {
+  ACTIVE
+  CLAIMED
+  EXPIRED
+  CANCELLED
+}
+
+enum InventoryStatus {
+  IN_STOCK
+  LOW_STOCK
+  OUT_OF_STOCK
+  EXPIRED
+}
+
+enum InventoryLogType {
+  ADD
+  REMOVE
+  ADJUSTMENT
+  ORDER_RESERVED
+  ORDER_FULFILLED
+  HARVEST_INCOMING
+  SPOILAGE_DISCARD
+}
+
+enum OrderStatus {
+  PLACED
+  CONFIRMED
+  HARVESTING
+  PACKED
+  OUT_FOR_DELIVERY
+  DELIVERED
+  CANCELLED
+}
+
+enum PaymentMethod {
+  UPI
+  CARD
+  CASH_ON_DELIVERY
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  REFUNDED
+}
+
+enum DeliveryBatchStatus {
+  PENDING
+  PREPARING
+  READY
+  OUT_FOR_DELIVERY
+  DELIVERED
+  CANCELLED
+}
+
+enum SaleStatus {
+  COMPLETED
+  PENDING_PAYOUT
+  PAID_OUT
+  REFUNDED
+}
+
+enum NotificationType {
+  ORDER
+  INVENTORY
+  REVIEW
+  SYSTEM
+  VERIFICATION
+  DELIVERY
+  DISPUTE
+}
+
+enum DocumentType {
+  GOVERNMENT_ID
+  LAND_OWNERSHIP_RTC
+  FARM_PHOTO
+  ORGANIC_CERTIFICATE
+  WATER_TEST_REPORT
+  OTHER
+}
+
+enum DisputeStatus {
+  OPEN
+  UNDER_REVIEW
+  RESOLVED
+  REJECTED
+}
+
+// ============================================================================
+// 1. USER & AUTHENTICATION
+// ============================================================================
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  passwordHash String
+  name         String
+  phone        String?
+  avatar       String?
+  role         UserRole  @default(CONSUMER)
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  // 1-to-1 Farmer Profile (if role is FARMER)
+  farmer          Farmer?   @relation("FarmerProfile")
+
+  // Admin approval relationship (farmers approved by this admin)
+  approvedFarmers Farmer[]  @relation("AdminApprovedFarmers")
+
+  // 1-to-many Consumer relations
+  addresses     ConsumerAddress[]
+  orders        Order[]
+  reviews       Review[]
+  notifications Notification[]
+  disputes      Dispute[]
+
+  @@index([email])
+  @@index([role])
+}
+
+// ============================================================================
+// 2. FARMER PROFILE & ACCREDITATION GATE
+// ============================================================================
+
+model Farmer {
+  id                 String             @id @default(cuid())
+  userId             String             @unique
+  user               User               @relation("FarmerProfile", fields: [userId], references: [id], onDelete: Cascade)
+
+  farmName           String
+  farmLocation       String             // Detailed address / survey number
+  location           String             // Display location e.g. "HSR Layout, Bengaluru"
+  city               String             @default("Bengaluru")
+  state              String             @default("Karnataka")
+  pincode            String
+  hub                String             // e.g. "HSR Layout / Sarjapur Road"
+  distanceKm         Decimal?           @default(2.5) @db.Decimal(5, 2)
+  farmingMethod      FarmingMethod      @default(ORGANIC)
+  yearsFarming       Int                @default(1)
+  acreage            Decimal            @default(5.0) @db.Decimal(6, 2)
+  mainCrops          String[]           // Native PostgreSQL text array
+  farmDescription    String?            @db.Text
+  story              String?            @db.Text
+  soilPractices      String[]           // e.g. ["Jeevamrutha microbial culture", "Mulching"]
+  waterSource        String?            // e.g. "Solar rainwater harvesting & borewell recharge pits"
+  certifications     String[]           // e.g. ["Jaivik Bharat Certified", "NPOP India Organic"]
+  coverImage         String?
+  gallery            String[]           // Image URLs
+  rating             Decimal            @default(5.0) @db.Decimal(3, 2)
+  reviewCount        Int                @default(0)
+  totalProductsCount Int                @default(0)
+  farmSinceYear      Int?
+
+  // Admin Verification Gate State
+  isVerified         Boolean            @default(false)
+  verificationStatus VerificationStatus @default(PENDING)
+  rejectionReason    String?            @db.Text
+  registeredAt       DateTime           @default(now())
+  approvedAt         DateTime?
+  approvedById       String?
+  approvedBy         User?              @relation("AdminApprovedFarmers", fields: [approvedById], references: [id], onDelete: SetNull)
+  verifiedDate       DateTime?
+
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  // Relations
+  verificationDocuments FarmerDocument[]
+  products              Product[]
+  inventoryItems        InventoryItem[]
+  harvestBatches        HarvestBatch[]
+  surplusOffers         SurplusOffer[]
+  sales                 Sale[]
+  orderItems            OrderItem[]
+  reviews               Review[]
+
+  @@index([verificationStatus])
+  @@index([hub])
+  @@index([city])
+  @@index([approvedById])
+}
+
+// ============================================================================
+// 3. FARMER VERIFICATION DOCUMENTS
+// ============================================================================
+
+model FarmerDocument {
+  id         String       @id @default(cuid())
+  farmerId   String
+  farmer     Farmer       @relation(fields: [farmerId], references: [id], onDelete: Cascade)
+
+  type       DocumentType
+  title      String       // e.g. "Aadhaar Card", "RTC Land Extract"
+  fileUrl    String       // URL/Storage path
+  fileName   String       // e.g. "KA-Aadhaar-9812.pdf"
+  fileSize   Int?         // in bytes
+  mimeType   String?      // e.g. "application/pdf"
+  isVerified Boolean      @default(false)
+  notes      String?
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+
+  @@index([farmerId])
+  @@index([type])
+}
+
+// ============================================================================
+// 4. PRODUCTS
+// ============================================================================
+
+model Product {
+  id                        String          @id @default(cuid())
+  farmerId                  String
+  farmer                    Farmer          @relation(fields: [farmerId], references: [id], onDelete: Cascade)
+
+  name                      String
+  category                  ProductCategory @default(VEGETABLES)
+  description               String          @db.Text
+  price                     Decimal         @db.Decimal(10, 2) // Price in INR
+  unit                      String          // e.g., "1 kg", "500 g", "250 g bunch"
+  unitShort                 String          // e.g., "kg", "g", "bunch", "dozen"
+  images                    String[]        // URLs of product photos
+  shelfLifeDays             Int             @default(6)        // Authoritative base for dynamic freshness computation
+  expectedFreshnessDuration String?         // e.g. "6 days room temperature"
+  harvestDate               DateTime?       // Reference harvest timestamp for freshness calculation
+  farmDistanceKm            Decimal?        @default(2.5) @db.Decimal(5, 2)
+  isOrganic                 Boolean         @default(true)
+  farmingMethod             FarmingMethod   @default(ORGANIC)
+  status                    ProductStatus   @default(ACTIVE)
+  inStock                   Boolean         @default(true)
+  
+  // Stock summaries (maintained for frontend compatibility, synchronized via backend services)
+  availableQuantity         Decimal         @default(0) @db.Decimal(10, 2)
+  reservedQuantity          Decimal         @default(0) @db.Decimal(10, 2)
+  soldQuantity              Decimal         @default(0) @db.Decimal(10, 2)
+  lowStockThreshold         Decimal         @default(10) @db.Decimal(10, 2)
+  
+  rating                    Decimal         @default(5.0) @db.Decimal(3, 2)
+  reviewsCount              Int             @default(0)
+  nutritionHighlights       String[]
+
+  createdAt                 DateTime        @default(now())
+  updatedAt                 DateTime        @updatedAt
+
+  // Relations
+  inventory                 InventoryItem?
+  harvestBatches            HarvestBatch[]
+  orderItems                OrderItem[]
+  surplusOffers             SurplusOffer[]
+  reviews                   Review[]
+
+  @@index([farmerId])
+  @@index([category])
+  @@index([status])
+  @@index([inStock])
+}
+
+// ============================================================================
+// 5. INVENTORY & INVENTORY AUDIT LOGS
+// ============================================================================
+
+model InventoryItem {
+  id                String          @id @default(cuid())
+  productId         String          @unique
+  product           Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  farmerId          String
+  farmer            Farmer          @relation(fields: [farmerId], references: [id], onDelete: Cascade)
+
+  // Live stock counts (synchronized via backend services with Product summaries)
+  currentStock      Decimal         @default(0) @db.Decimal(10, 2)
+  availableQuantity Decimal         @default(0) @db.Decimal(10, 2)
+  reservedQuantity  Decimal         @default(0) @db.Decimal(10, 2)
+  soldQuantity      Decimal         @default(0) @db.Decimal(10, 2)
+  threshold         Decimal         @default(15) @db.Decimal(10, 2)
+  status            InventoryStatus @default(IN_STOCK)
+  
+  lastUpdated       DateTime        @default(now()) @updatedAt
+  createdAt         DateTime        @default(now())
+
+  // Audit Logs
+  logs              InventoryLog[]
+
+  @@index([farmerId])
+  @@index([status])
+}
+
+model InventoryLog {
+  id              String           @id @default(cuid())
+  inventoryItemId String
+  inventoryItem   InventoryItem    @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+
+  type            InventoryLogType
+  amount          Decimal          @db.Decimal(10, 2)
+  newQuantity     Decimal          @db.Decimal(10, 2)
+  reason          String
+  createdAt       DateTime         @default(now())
+
+  @@index([inventoryItemId])
+  @@index([createdAt])
+}
+
+// ============================================================================
+// 6. HARVEST BATCHES & TRACEABILITY
+// ============================================================================
+
+model HarvestBatch {
+  id                    String              @id @default(cuid())
+  batchNumber           String              @unique // e.g. "HAR-20260924-01"
+  farmerId              String
+  farmer                Farmer              @relation(fields: [farmerId], references: [id], onDelete: Cascade)
+  productId             String
+  product               Product             @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  harvestDate           DateTime            // Authoritative: used with expectedShelfLifeDays to calculate real-time freshness
+  quantity              Decimal             @db.Decimal(10, 2)
+  availableQuantity     Decimal             @db.Decimal(10, 2)
+  unit                  String              // "kg", "bunch", "box"
+  farmingMethod         FarmingMethod       @default(ORGANIC)
+  location              String?             // Specific plot / polyhouse / field location
+  expectedShelfLifeDays Int                 @default(6) // Authoritative shelf life duration in days
+  expectedFreshness     Int                 @default(95) // Initial quality inspection rating score; dynamic freshness is computed
+  status                HarvestStatus       @default(AVAILABLE)
+  qrCodeUrl             String?             // Generated QR trace URL
+  notes                 String?             @db.Text
+
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+
+  // Provenance Events (Seed to Fork Traceability)
+  traceabilityEvents    TraceabilityEvent[]
+  surplusOffers         SurplusOffer[]
+
+  @@index([farmerId])
+  @@index([productId])
+  @@index([batchNumber])
+  @@index([harvestDate])
+}
+
+// ============================================================================
+// 7. QR TRACEABILITY PROVENANCE EVENTS
+// ============================================================================
+
+model TraceabilityEvent {
+  id          String           @id @default(cuid())
+  batchId     String
+  batch       HarvestBatch     @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  step        TraceabilityStep
+  title       String           // e.g. "Indigenous Seed Sowing", "Dawn Hand Harvest"
+  location    String           // e.g. "Green Valley Field #4, HSR Layout"
+  timestamp   DateTime
+  details     String           @db.Text
+  completed   Boolean          @default(true)
+  verifiedBy  String?          // e.g. "KOCA Organic Field Inspector", "Lead Farmer: Ravi Kumar"
+  actor       String?          // e.g. "Field Lead: Ravi Kumar"
+  orderIndex  Int              @default(0)
+
+  createdAt   DateTime         @default(now())
+
+  @@index([batchId])
+  @@index([orderIndex])
+}
+
+// ============================================================================
+// 8. SURPLUS ENGINE (FLASH DISCOUNT OFFERS)
+// ============================================================================
+
+model SurplusOffer {
+  id                  String             @id @default(cuid())
+  offerCode           String             @unique // e.g. "SO-2026-001"
+  farmerId            String
+  farmer              Farmer             @relation(fields: [farmerId], references: [id], onDelete: Cascade)
+  productId           String
+  product             Product            @relation(fields: [productId], references: [id], onDelete: Cascade)
+  batchId             String?
+  batch               HarvestBatch?      @relation(fields: [batchId], references: [id], onDelete: SetNull)
+
+  availableQuantity   Decimal            @db.Decimal(10, 2)
+  unit                String
+  originalPrice       Decimal            @db.Decimal(10, 2)
+  discountPercent     Int                // e.g. 25 (%)
+  offerPrice          Decimal            @db.Decimal(10, 2)
+  expiryDate          DateTime
+  reason              String             @db.Text
+  status              SurplusOfferStatus @default(ACTIVE)
+
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+
+  @@index([farmerId])
+  @@index([productId])
+  @@index([status])
+  @@index([expiryDate])
+}
+
+// ============================================================================
+// 9. CONSUMERS & DELIVERY ADDRESSES
+// ============================================================================
+
+model ConsumerAddress {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name        String
+  phone       String
+  addressLine String
+  city        String   @default("Bengaluru")
+  state       String   @default("Karnataka")
+  pincode     String
+  hub         String   // e.g. "HSR Layout", "Koramangala", "Indiranagar"
+  isDefault   Boolean  @default(false)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  orders      Order[]
+
+  @@index([userId])
+  @@index([hub])
+}
+
+// ============================================================================
+// 10. ORDERS
+// ============================================================================
+
+model Order {
+  id                String            @id @default(cuid())
+  orderNumber       String            @unique // e.g. "KM-1024" or "KM-20260924-1042"
+  consumerId        String
+  consumer          User              @relation(fields: [consumerId], references: [id], onDelete: Restrict)
+  addressId         String?
+  address           ConsumerAddress?  @relation(fields: [addressId], references: [id], onDelete: SetNull)
+
+  // Delivery configuration
+  deliverySlotName  String            // e.g. "Morning Slot"
+  deliverySlotRange String            // e.g. "8:00 AM – 11:00 AM"
+  status            OrderStatus       @default(PLACED)
+
+  // Financial Split
+  subtotal          Decimal           @db.Decimal(10, 2)
+  deliveryFee       Decimal           @default(0) @db.Decimal(10, 2)
+  platformFee       Decimal           @default(0) @db.Decimal(10, 2)
+  farmerEarnings    Decimal           @default(0) @db.Decimal(10, 2) // 75% direct farmer share
+  total             Decimal           @db.Decimal(10, 2)
+
+  // Payment status
+  paymentMethod     PaymentMethod     @default(UPI)
+  paymentStatus     PaymentStatus     @default(PENDING)
+
+  // Delivery batching reference
+  deliveryBatchId   String?
+  deliveryBatch     DeliveryBatch?    @relation(fields: [deliveryBatchId], references: [id], onDelete: SetNull)
+
+  estimatedDelivery DateTime?
+  deliveredAt       DateTime?
+
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  // Relations
+  items             OrderItem[]
+  timeline          OrderTimelineStep[]
+  sales             Sale[]
+  disputes          Dispute[]
+
+  @@index([consumerId])
+  @@index([status])
+  @@index([deliveryBatchId])
+  @@index([createdAt])
+}
+
+// ============================================================================
+// 11. ORDER ITEMS (HISTORICAL AUDIT SNAPSHOT)
+// ============================================================================
+
+model OrderItem {
+  id           String    @id @default(cuid())
+  orderId      String
+  order        Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  
+  productId    String?
+  product      Product?  @relation(fields: [productId], references: [id], onDelete: SetNull)
+  farmerId     String
+  farmer       Farmer    @relation(fields: [farmerId], references: [id], onDelete: Restrict)
+
+  // Historical snapshot at moment of purchase
+  productName  String
+  productImage String
+  farmerName   String
+  farmName     String
+  unitPrice    Decimal   @db.Decimal(10, 2) // Preserves historical price
+  quantity     Decimal   @db.Decimal(10, 2)
+  unit         String
+  totalPrice   Decimal   @db.Decimal(10, 2)
+
+  createdAt    DateTime  @default(now())
+
+  sales        Sale[]
+
+  @@index([orderId])
+  @@index([farmerId])
+  @@index([productId])
+}
+
+// ============================================================================
+// 12. ORDER LIFECYCLE TIMELINE
+// ============================================================================
+
+model OrderTimelineStep {
+  id          String      @id @default(cuid())
+  orderId     String
+  order       Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  status      OrderStatus
+  label       String      // e.g. "Order Placed", "Harvesting", "Delivered"
+  description String
+  isCompleted Boolean     @default(false)
+  isCurrent   Boolean     @default(false)
+  timestamp   DateTime    @default(now())
+
+  @@index([orderId])
+}
+
+// ============================================================================
+// 13. DELIVERY BATCHING (HYPERLOCAL ROUTE DISPATCH)
+// ============================================================================
+
+model DeliveryBatch {
+  id                    String                     @id @default(cuid())
+  batchCode             String                     @unique // e.g. "DB-102"
+  hubArea               String                     // e.g. "HSR Layout"
+  deliverySlot          String                     // e.g. "8:00 AM – 11:00 AM"
+  status                DeliveryBatchStatus        @default(PENDING)
+  
+  riderName             String?                    // e.g. "Manjunath G."
+  riderPhone            String?
+  riderVehicle          String?                    // e.g. "Ather Cargo EV"
+  estimatedDistanceKm   Decimal?                   @db.Decimal(6, 2)
+  estimatedDeliveryTime String?                    // e.g. "45 mins"
+  totalQuantity         Decimal?                   @db.Decimal(10, 2)
+  productsSummary       String?                    // Summary string of consolidated crops
+
+  createdAt             DateTime                   @default(now())
+  updatedAt             DateTime                   @updatedAt
+
+  orders                Order[]
+  timelineSteps         DeliveryBatchTimelineStep[]
+
+  @@index([hubArea])
+  @@index([status])
+}
+
+model DeliveryBatchTimelineStep {
+  id          String              @id @default(cuid())
+  batchId     String
+  batch       DeliveryBatch       @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  status      DeliveryBatchStatus
+  label       String              // e.g. "Batch Formed", "Crops Consolidated"
+  timestamp   DateTime            @default(now())
+  isCompleted Boolean             @default(false)
+  isCurrent   Boolean             @default(false)
+
+  @@index([batchId])
+}
+
+// ============================================================================
+// 14. SALES & COMPLETED PAYOUT TRANSACTIONS
+// ============================================================================
+
+model Sale {
+  id                   String     @id @default(cuid())
+  saleCode             String     @unique // e.g. "SALE-101"
+  orderId              String
+  order                Order      @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  farmerId             String
+  farmer               Farmer     @relation(fields: [farmerId], references: [id], onDelete: Restrict)
+  orderItemId          String?
+  orderItem            OrderItem? @relation(fields: [orderItemId], references: [id], onDelete: SetNull)
+
+  productName          String
+  category             String
+  quantity             Decimal    @db.Decimal(10, 2)
+  unit                 String
+  revenue              Decimal    @db.Decimal(10, 2) // 75% farmer direct share
+  status               SaleStatus @default(PENDING_PAYOUT)
+  
+  payoutDate           DateTime?
+  transactionReference String?
+
+  createdAt            DateTime   @default(now())
+  updatedAt            DateTime   @updatedAt
+
+  @@index([farmerId])
+  @@index([orderId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// ============================================================================
+// 15. NOTIFICATIONS
+// ============================================================================
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  title     String
+  message   String           @db.Text
+  type      NotificationType @default(ORDER)
+  isRead    Boolean          @default(false)
+  link      String?          // e.g. "/farmer/orders/KM-1024"
+
+  createdAt DateTime         @default(now())
+
+  @@index([userId])
+  @@index([isRead])
+  @@index([createdAt])
+}
+
+// ============================================================================
+// 16. REVIEWS & DISPUTES
+// ============================================================================
+
+model Review {
+  id               String   @id @default(cuid())
+  userId           String
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  farmerId         String
+  farmer           Farmer   @relation(fields: [farmerId], references: [id], onDelete: Cascade)
+  productId        String?
+  product          Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  rating           Int      @default(5)
+  comment          String   @db.Text
+  verifiedPurchase Boolean  @default(true)
+
+  createdAt        DateTime @default(now())
+
+  @@index([farmerId])
+  @@index([productId])
+  @@index([userId])
+}
+
+model Dispute {
+  id          String        @id @default(cuid())
+  orderId     String
+  order       Order         @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  userId      String
+  user        User          @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  productName String
+  reason      String
+  amount      Decimal       @db.Decimal(10, 2)
+  status      DisputeStatus @default(OPEN)
+  description String        @db.Text
+  resolution  String?       @db.Text
+
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@index([orderId])
+  @@index([userId])
+  @@index([status])
+}

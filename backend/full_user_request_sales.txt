@@ -1,0 +1,575 @@
+<USER_REQUEST>
+Implement the NEXT module for Krishi Market: SALES & PAYOUTS.
+
+IMPORTANT:
+The following modules are already implemented, connected to PostgreSQL/Supabase, and tested:
+
+- Farmer Registration
+- Farmer Login
+- Admin Farmer Verification
+- Products
+- Inventory
+- Harvest Management
+- QR Traceability
+- Surplus Engine
+- Core Orders
+- Delivery Batching
+
+DO NOT break, redesign, or replace any of these.
+
+==================================================
+GOAL
+==================================================
+
+Replace the Farmer Sales/Dashboard mock revenue data with REAL
+PostgreSQL-backed sales data.
+
+The source of truth must be:
+
+PostgreSQL / Prisma
+        ↓
+Delivered Orders
+        ↓
+Order Items
+        ↓
+Sales Records
+        ↓
+Farmer Revenue / Payout Dashboard
+
+Do NOT use mock sales data for live farmer sales.
+
+==================================================
+1. INSPECT THE EXISTING SYSTEM FIRST
+==================================================
+
+Before making changes, inspect:
+
+- Prisma schema
+- Sale model
+- Order model
+- OrderItem model
+- Farmer model
+- DeliveryBatch model
+- existing /farmer/sales page
+- existing Farmer Dashboard
+- existing SalesChart component
+- FarmerContext
+- existing sales mock data
+- existing order APIs
+- existing delivery APIs
+- authentication middleware
+- farmer authorization logic
+
+Understand the existing architecture before modifying anything.
+
+==================================================
+2. SALES RECORD CREATION
+==================================================
+
+Sales must be generated from REAL completed orders.
+
+A sale should only be created when the relevant order/order item
+reaches DELIVERED status.
+
+Do NOT create sales when:
+
+- order is merely PLACED
+- order is CONFIRMED
+- order is HARVESTING
+- order is PACKED
+- order is OUT_FOR_DELIVERY
+- order is CANCELLED
+
+Only DELIVERED orders are eligible.
+
+==================================================
+3. PREVENT DUPLICATE SALES
+==================================================
+
+This is critical.
+
+If the same order is processed multiple times:
+
+DO NOT create duplicate Sale records.
+
+Use a database-safe strategy.
+
+A sale should have a unique identifier/code.
+
+Before creating a sale:
+
+- check whether the relevant sale already exists
+- use a Prisma transaction
+- prevent duplicate records during concurrent requests
+
+The system must remain idempotent.
+
+==================================================
+4. FARMER REVENUE CALCULATION
+==================================================
+
+Use the actual OrderItem values stored in PostgreSQL.
+
+Do NOT trust frontend revenue calculations.
+
+For every delivered OrderItem:
+
+quantity × unitPrice = gross item revenue
+
+The farmer's revenue must be calculated consistently with the
+existing financial model in the Prisma schema.
+
+The existing schema contains:
+
+subtotal
+deliveryFee
+platformFee
+farmerEarnings
+total
+
+Respect the existing model.
+
+Do not invent a new commission percentage if one already exists
+in the current implementation.
+
+If the existing code uses the 75% farmer-share rule, preserve it.
+
+==================================================
+5. SALE RECORD
+==================================================
+
+Populate the existing Sale model with real information:
+
+- saleCode
+- orderId
+- farmerId
+- orderItemId
+- productName
+- category
+- quantity
+- unit
+- revenue
+- status
+- payoutDate
+- transactionReference
+- createdAt
+
+The product/farmer information stored in Sale must remain a
+historical snapshot.
+
+Do not depend on the current Product name/price to reconstruct
+old sales.
+
+==================================================
+6. PAYOUT STATUS
+==================================================
+
+Use the existing SaleStatus enum:
+
+COMPLETED
+PENDING_PAYOUT
+PAID_OUT
+REFUNDED
+
+For newly delivered sales:
+
+PENDING_PAYOUT
+
+Do NOT pretend that money has actually been transferred.
+
+There is NO real bank/UPI payout integration yet.
+
+==================================================
+7. PAYOUT MARKING
+==================================================
+
+Create an admin-protected API:
+
+PATCH /api/admin/sales/:saleId/payout
+
+This should allow an authorized ADMIN to mark a sale as:
+
+PAID_OUT
+
+and store:
+
+- payoutDate
+- transactionReference
+
+The transaction reference should be entered by the admin.
+
+A farmer must NOT be able to mark their own sale as PAID_OUT.
+
+A consumer must NOT be able to modify sales.
+
+Prevent already PAID_OUT sales from being paid again.
+
+==================================================
+8. FARMER SALES API
+==================================================
+
+Create:
+
+GET /api/farmer/sales
+
+Return ONLY sales belonging to the authenticated farmer.
+
+Never trust farmerId from query parameters or request body.
+
+Derive the farmer from the authenticated session.
+
+Support useful filters such as:
+
+- date range
+- status
+- product
+- category
+
+Do not expose another farmer's sales.
+
+==================================================
+9. SALES SUMMARY API
+==================================================
+
+Create:
+
+GET /api/farmer/sales/summary
+
+Return real PostgreSQL calculations such as:
+
+- total sales
+- total revenue
+- pending payout
+- paid out
+- completed sales count
+- total units sold
+- current month revenue
+- previous month revenue
+- product-wise sales
+- monthly revenue
+
+Use database aggregation where practical.
+
+Do NOT load every historical sale into the browser just to calculate
+large summaries on the frontend.
+
+==================================================
+10. MONTHLY REVENUE
+==================================================
+
+Generate monthly revenue from REAL Sale records.
+
+Example:
+
+January
+February
+March
+...
+
+The chart must reflect actual database data.
+
+If there are no sales:
+
+show:
+
+"No sales data available yet."
+
+Do NOT display fake revenue.
+
+==================================================
+11. PRODUCT PERFORMANCE
+==================================================
+
+Provide real product-level metrics:
+
+- product name
+- quantity sold
+- revenue
+- number of orders
+
+Use actual Sale/OrderItem data.
+
+==================================================
+12. FARMER DASHBOARD
+==================================================
+
+Update the existing Farmer Dashboard.
+
+The following should come from PostgreSQL:
+
+- Total Products
+- Active Products
+- Pending Orders
+- Monthly Revenue
+- Sales chart
+
+Do NOT show fabricated revenue for a newly registered farmer.
+
+For a farmer with zero delivered orders:
+
+Monthly Revenue = ₹0
+
+Sales chart = empty/zero-state
+
+Sales count = 0
+
+Payout = ₹0
+
+==================================================
+13. VERIFICATION GATE
+==================================================
+
+Maintain the existing farmer verification rules.
+
+PENDING farmer:
+
+- cannot access protected sales APIs
+- cannot create/manage sales
+- should see the existing verification pending experience
+
+REJECTED farmer:
+
+- should see the existing rejection experience
+
+APPROVED farmer:
+
+- can access their own sales
+
+Do not duplicate or bypass FarmerAuthGuard.
+
+==================================================
+14. FRONTEND SALES PAGE
+==================================================
+
+Connect:
+
+/farmer/sales
+
+to the real API.
+
+Preserve the existing UI/design.
+
+The page should display:
+
+- Total Revenue
+- Pending Payout
+- Paid Out
+- Total Units Sold
+- Sales history
+- Monthly revenue chart
+- Product performance
+- payout status
+
+Remove the live dependency on mock sales data.
+
+Do not delete useful existing UI components unless necessary.
+
+==================================================
+15. ADMIN SALES/PAYOUT VIEW
+==================================================
+
+If an Admin sales/payout page already exists:
+
+connect it to the real API.
+
+If it does not exist, create a minimal admin page for:
+
+- viewing pending payouts
+- viewing paid payouts
+- farmer
+- order
+- amount
+- status
+- payout date
+- transaction reference
+- marking payout as paid
+
+Do NOT build a complicated financial-management system.
+
+==================================================
+16. SECURITY
+==================================================
+
+Test ownership boundaries.
+
+Farmer A:
+
+CAN see Farmer A sales.
+
+CANNOT see Farmer B sales.
+
+CANNOT modify Farmer B sales.
+
+CANNOT mark sales as PAID_OUT.
+
+Consumer:
+
+CANNOT access farmer sales.
+
+CANNOT modify sales.
+
+ADMIN:
+
+CAN view platform sales/payout records.
+
+ADMIN:
+
+CAN mark eligible payouts as PAID_OUT.
+
+Never accept farmerId/userId from the frontend as the authority
+for authorization.
+
+==================================================
+17. DATABASE TRANSACTIONS
+==================================================
+
+When converting delivered order items into sales:
+
+Use Prisma transactions.
+
+The operation should safely:
+
+1. Verify order is DELIVERED
+2. Identify relevant farmer order items
+3. Check whether sales already exist
+4. Create missing Sale records
+5. Preserve historical information
+6. Commit atomically
+
+If anything fails:
+
+rollback the transaction.
+
+==================================================
+18. REFUNDS / CANCELLATIONS
+==================================================
+
+Respect the existing SaleStatus enum.
+
+Do not create complicated refund infrastructure.
+
+If an already-created sale must be refunded due to an existing
+supported order flow:
+
+mark it appropriately as:
+
+REFUNDED
+
+Do not silently delete financial history.
+
+==================================================
+19. TESTS
+==================================================
+
+Create integration tests for:
+
+1. Delivered order creates sale
+2. Non-delivered order does not create sale
+3. Cancelled order does not create sale
+4. Correct farmerId stored
+5. Correct orderId stored
+6. Correct orderItemId stored
+7. Correct quantity stored
+8. Correct revenue calculated
+9. Duplicate sale creation prevented
+10. Farmer can retrieve own sales
+11. Farmer cannot retrieve another farmer's sales
+12. Consumer cannot access farmer sales
+13. Pending farmer receives 403
+14. Rejected farmer receives 403
+15. Approved farmer can access sales
+16. Admin can view payouts
+17. Farmer cannot mark payout as paid
+18. Admin can mark eligible payout as PAID_OUT
+19. Already paid sale cannot be paid again
+20. payoutDate is stored
+21. transactionReference is stored
+22. Monthly revenue calculation is correct
+23. Product performance calculation is correct
+24. Dashboard shows ₹0 for farmer with no sales
+25. Sales survive logout/login
+26. Sales survive page refresh
+
+==================================================
+20. REGRESSION TESTS
+==================================================
+
+After implementation, rerun all existing tests for:
+
+- Authentication
+- Farmer verification
+- Products
+- Inventory
+- Harvests
+- QR Traceability
+- Surplus
+- Orders
+- Delivery Batching
+
+Do not report Sales as complete if existing modules are broken.
+
+==================================================
+21. BUILD VALIDATION
+==================================================
+
+Run:
+
+- TypeScript check
+- Prisma validation
+- backend tests
+- frontend tests
+- Next.js production build
+
+Fix all errors caused by your changes.
+
+==================================================
+IMPORTANT RESTRICTIONS
+==================================================
+
+DO NOT:
+
+- integrate Razorpay
+- integrate Stripe
+- integrate UPI APIs
+- integrate bank APIs
+- pretend payouts happened
+- add fake sales
+- add fake revenue
+- hardcode dashboard numbers
+- delete existing working features
+- replace PostgreSQL with localStorage
+- reintroduce mock data as the source of truth
+- redesign the Farmer Module
+
+The goal is:
+
+REAL ORDERS
+      ↓
+REAL DELIVERIES
+      ↓
+REAL SALES
+      ↓
+REAL FARMER REVENUE
+      ↓
+REAL PAYOUT STATUS
+
+STOP when Sales & Payouts are completely implemented and tested.
+
+FINAL REPORT MUST INCLUDE:
+
+A. Files changed
+B. APIs created
+C. Database changes
+D. Sale creation logic
+E. Revenue calculation
+F. Duplicate prevention
+G. Payout logic
+H. Authorization/security
+I. Test results
+J. Regression test results
+K. TypeScript/build results
+L. Any remaining issues
+</USER_REQUEST>
+<ADDITIONAL_METADATA>
+The current local time is: 2026-09-27T19:25:02+05:30.
+</ADDITIONAL_METADATA>

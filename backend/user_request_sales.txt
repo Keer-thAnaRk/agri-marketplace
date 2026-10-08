@@ -1,0 +1,178 @@
+<USER_REQUEST>
+Implement the NEXT module for Krishi Market: SALES & PAYOUTS.
+
+IMPORTANT:
+The following modules are already implemented, connected to PostgreSQL/Supabase, and tested:
+
+- Farmer Registration
+- Farmer Login
+- Admin Farmer Verification
+- Products
+- Inventory
+- Harvest Management
+- QR Traceability
+- Surplus Engine
+- Core Orders
+- Delivery Batching
+
+DO NOT break, redesign, or replace any of these.
+
+==================================================
+GOAL
+==================================================
+
+Replace the Farmer Sales/Dashboard mock revenue data with REAL
+PostgreSQL-backed sales data.
+
+The source of truth must be:
+
+PostgreSQL / Prisma
+        ↓
+Delivered Orders
+        ↓
+Order Items
+        ↓
+Sales Records
+        ↓
+Farmer Revenue / Payout Dashboard
+
+Do NOT use mock sales data for live farmer sales.
+
+==================================================
+1. INSPECT THE EXISTING SYSTEM FIRST
+==================================================
+
+Before making changes, inspect:
+
+- Prisma schema
+- Sale model
+- Order model
+- OrderItem model
+- Farmer model
+- DeliveryBatch model
+- existing /farmer/sales page
+- existing Farmer Dashboard
+- existing SalesChart component
+- FarmerContext
+- existing sales mock data
+- existing order APIs
+- existing delivery APIs
+- authentication middleware
+- farmer authorization logic
+
+Understand the existing architecture before modifying anything.
+
+==================================================
+2. SALES RECORD CREATION
+==================================================
+
+Sales must be generated from REAL completed orders.
+
+A sale should only be created when the relevant order/order item
+reaches DELIVERED status.
+
+Do NOT create sales when:
+
+- order is merely PLACED
+- order is CONFIRMED
+- order is HARVESTING
+- order is PACKED
+- order is OUT_FOR_DELIVERY
+- order is CANCELLED
+
+Only DELIVERED orders are eligible.
+
+==================================================
+3. PREVENT DUPLICATE SALE
+<truncated 8607 bytes>
+youtDate is stored
+21. transactionReference is stored
+22. Monthly revenue calculation is correct
+23. Product performance calculation is correct
+24. Dashboard shows ₹0 for farmer with no sales
+25. Sales survive logout/login
+26. Sales survive page refresh
+
+==================================================
+20. REGRESSION TESTS
+==================================================
+
+After implementation, rerun all existing tests for:
+
+- Authentication
+- Farmer verification
+- Products
+- Inventory
+- Harvests
+- QR Traceability
+- Surplus
+- Orders
+- Delivery Batching
+
+Do not report Sales as complete if existing modules are broken.
+
+==================================================
+21. BUILD VALIDATION
+==================================================
+
+Run:
+
+- TypeScript check
+- Prisma validation
+- backend tests
+- frontend tests
+- Next.js production build
+
+Fix all errors caused by your changes.
+
+==================================================
+IMPORTANT RESTRICTIONS
+==================================================
+
+DO NOT:
+
+- integrate Razorpay
+- integrate Stripe
+- integrate UPI APIs
+- integrate bank APIs
+- pretend payouts happened
+- add fake sales
+- add fake revenue
+- hardcode dashboard numbers
+- delete existing working features
+- replace PostgreSQL with localStorage
+- reintroduce mock data as the source of truth
+- redesign the Farmer Module
+
+The goal is:
+
+REAL ORDERS
+      ↓
+REAL DELIVERIES
+      ↓
+REAL SALES
+      ↓
+REAL FARMER REVENUE
+      ↓
+REAL PAYOUT STATUS
+
+STOP when Sales & Payouts are completely implemented and tested.
+
+FINAL REPORT MUST INCLUDE:
+
+A. Files changed
+B. APIs created
+C. Database changes
+D. Sale creation logic
+E. Revenue calculation
+F. Duplicate prevention
+G. Payout logic
+H. Authorization/security
+I. Test results
+J. Regression test results
+K. TypeScript/build results
+L. Any remaining issues
+</USER_REQUEST>
+<ADDITIONAL_METADATA>
+The current local time is: 2026-09-27T19:25:02+05:30.
+</ADDITIONAL_METADATA>
