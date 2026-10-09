@@ -173,7 +173,7 @@ export class OrderService {
         (err as any).status = 400;
         throw err;
       }
-      candidateItems = cartRows.map((c) => ({
+      candidateItems = cartRows.map((c): CreateOrderItemInput => ({
         productId: c.productId,
         quantity: Number(c.quantity),
       }));
