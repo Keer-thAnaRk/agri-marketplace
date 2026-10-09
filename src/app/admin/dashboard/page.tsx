@@ -183,9 +183,16 @@ export default function AdminDashboardPage() {
     const adminToken = localStorage.getItem('krishi_admin_token');
     console.log('Admin dashboard - Token available:', !!adminToken);
 
+    // Redirect to login if no token
+    if (!adminToken) {
+      console.log('Admin dashboard - No token found, redirecting to login');
+      window.location.href = '/admin/login';
+      return;
+    }
+
     const fetchDashboard = async (retryCount = 0) => {
       try {
-        const res = await api.getAdminDashboard(undefined, adminToken || undefined);
+        const res = await api.getAdminDashboard(undefined, adminToken);
         
         if (!isCancelled) {
           console.log('Admin dashboard - API response:', res);
@@ -220,6 +227,13 @@ export default function AdminDashboardPage() {
         if (!isCancelled) {
           console.error('Failed to load dashboard data:', err);
           const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred';
+          
+          // Check for authentication error - redirect to login
+          if (errorMessage.includes('401') || errorMessage.includes('403') || errorMessage.includes('Unauthorized') || errorMessage.includes('token')) {
+            console.log('Admin dashboard - Authentication failed, redirecting to login');
+            window.location.href = '/admin/login';
+            return;
+          }
           
           // Check for database connection pool error - retry once
           if ((errorMessage.includes('max clients reached') || errorMessage.includes('EMAXCONNSESSION')) && retryCount < 1) {

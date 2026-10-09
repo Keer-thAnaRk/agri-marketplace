@@ -316,6 +316,7 @@ export class AuthService {
    */
   async loginAdmin(input: { email?: string; password?: string }) {
     const trimmedEmail = (input.email || 'admin@krishimarket.in').trim().toLowerCase();
+    const defaultAdminPassword = process.env.DEFAULT_ADMIN_PASSWORD;
 
     let user = await prisma.user.findUnique({
       where: { email: trimmedEmail },
@@ -323,7 +324,10 @@ export class AuthService {
 
     if (!user) {
       if (trimmedEmail === 'admin@krishimarket.in') {
-        const passwordHash = await hashPassword(input.password || 'admin123');
+        if (!defaultAdminPassword) {
+          throw new Error('DEFAULT_ADMIN_PASSWORD environment variable is required for admin account creation.');
+        }
+        const passwordHash = await hashPassword(input.password || defaultAdminPassword);
         user = await prisma.user.create({
           data: {
             name: 'Krishi Platform Admin',
@@ -341,7 +345,7 @@ export class AuthService {
       if (user.role !== UserRole.ADMIN) {
         throw new Error('Access denied: Account is not registered as an Administrator.');
       }
-      if (input.password && input.password !== 'admin123' && input.password !== 'krishi2026') {
+      if (input.password) {
         const isMatch = await comparePassword(input.password, user.passwordHash);
         if (!isMatch) {
           throw new Error('Invalid email or password.');
@@ -424,6 +428,7 @@ export class AuthService {
    */
   async loginConsumer(input: { email: string; password?: string }) {
     const trimmedEmail = input.email.trim().toLowerCase();
+    const defaultConsumerPassword = process.env.DEFAULT_CONSUMER_PASSWORD;
 
     let user = await prisma.user.findUnique({
       where: { email: trimmedEmail },
@@ -435,7 +440,10 @@ export class AuthService {
         trimmedEmail === 'ananya.sharma@example.com' ||
         trimmedEmail === 'consumer@krishimarket.in'
       ) {
-        const passwordHash = await hashPassword(input.password || 'consumer123');
+        if (!defaultConsumerPassword) {
+          throw new Error('DEFAULT_CONSUMER_PASSWORD environment variable is required for demo consumer account creation.');
+        }
+        const passwordHash = await hashPassword(input.password || defaultConsumerPassword);
         user = await prisma.user.create({
           data: {
             name: 'Ananya Sharma',
@@ -459,11 +467,9 @@ export class AuthService {
       if (!input.password) {
         throw new Error('Password is required.');
       }
-      if (input.password !== 'consumer123' && input.password !== 'krishi2026') {
-        const isMatch = await comparePassword(input.password, user.passwordHash);
-        if (!isMatch) {
-          throw new Error('Invalid email or password.');
-        }
+      const isMatch = await comparePassword(input.password, user.passwordHash);
+      if (!isMatch) {
+        throw new Error('Invalid email or password.');
       }
     }
 
